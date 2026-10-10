@@ -47,6 +47,7 @@ fun LoginForm(
     password: String,
     passwordFieldState: LoginFieldState,
     onPasswordChange: (String) -> Unit,
+    onOidcLoginClicked: () -> Unit,
     onForgotPasswordClicked: () -> Unit,
     isRegistering: Boolean,
     onSubmit: () -> Unit,
@@ -205,6 +206,24 @@ fun LoginForm(
                         )
                     }
                 }
+            }
+        }
+        AnimatedVisibility(!isRegistering) {
+            Button(
+                onOidcLoginClicked,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.Companion.White,
+                    contentColor = colorResource(R.color.gray_50)
+                ),
+                shape = HabiticaTheme.shapes.large,
+                contentPadding = PaddingValues(15.dp),
+                modifier = Modifier.Companion.fillMaxWidth().padding(top = 10.dp)
+            ) {
+                Text(
+                    stringResource(R.string.continue_with_sso),
+                    fontWeight = FontWeight.Companion.Bold,
+                    fontSize = 18.sp
+                )
             }
         }
         AnimatedVisibility(!isRegistering) {

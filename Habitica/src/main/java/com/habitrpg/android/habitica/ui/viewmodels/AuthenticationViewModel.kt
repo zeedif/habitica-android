@@ -2,6 +2,7 @@ package com.habitrpg.android.habitica.ui.viewmodels
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.edit
@@ -123,6 +124,15 @@ class AuthenticationViewModel @Inject constructor(
     suspend fun changeServer() {
         sharedPrefs.edit { putString("server_url", server.value) }
         apiClient.updateServerUrl(newAddress = server.value)
+    }
+
+    suspend fun loginWithOidc(uri: Uri) {
+        // The server sends the credentials in the fragment to keep them out of logs
+        val params = uri.buildUpon().encodedQuery(uri.encodedFragment).build()
+        val id = params.getQueryParameter("id")
+        val key = params.getQueryParameter("key")
+        if (id == null || key == null) return authenticationError()
+        handleAuthResponse(UserAuthResponse(apiToken = key, id = id, newUser = params.getQueryParameter("newUser").toBoolean()))
     }
 
     suspend fun login() {
