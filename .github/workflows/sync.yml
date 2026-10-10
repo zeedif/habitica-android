@@ -1,0 +1,101 @@
+name: Sync and Release
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  push:
+    branches:
+      - self-host
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  Sync:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      rebased: ${{ steps.rebase.outputs.rebased }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1000
+      - name: Rebase on awinterstein/habitica-android
+        id: rebase
+        # awinterstein/habitica-android rewrites self-host whenever it rebases it on HabitRPG/habitica-android,
+        # so only the commits of this fork are moved: the ones on top of the upstream tip
+        # recorded in the upstream-base branch (or, without it, on top of the last commit
+        # whose subject upstream still has).
+        run: |
+          set -ex
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "GitHub Actions"
+          git fetch https://github.com/awinterstein/habitica-android.git self-host
+          UPSTREAM=$(git rev-parse FETCH_HEAD)
+          if git merge-base --is-ancestor "$UPSTREAM" HEAD; then
+            echo "rebased=false" >> "$GITHUB_OUTPUT"
+            git push origin "+$UPSTREAM:refs/heads/upstream-base"
+            exit 0
+          fi
+          BASE=
+          if git fetch origin upstream-base && git merge-base --is-ancestor FETCH_HEAD HEAD; then
+            BASE=$(git rev-parse FETCH_HEAD)
+          else
+            MERGE_BASE=$(git merge-base "$UPSTREAM" HEAD)
+            BASE=$MERGE_BASE
+            git log --format=%s "$MERGE_BASE..$UPSTREAM" > "$RUNNER_TEMP/upstream-subjects"
+            for COMMIT in $(git rev-list --reverse "$MERGE_BASE..HEAD"); do
+              if grep -qxF "$(git log -1 --format=%s "$COMMIT")" "$RUNNER_TEMP/upstream-subjects"; then
+                BASE=$COMMIT
+              fi
+            done
+          fi
+          echo "Commits of this fork:"
+          git log --oneline "$BASE..HEAD"
+          if ! git rebase --onto "$UPSTREAM" "$BASE"; then
+            git rebase --abort
+            echo "::error::The commits of this fork do not apply on awinterstein/habitica-android $UPSTREAM, rebase them by hand"
+            exit 1
+          fi
+          git push --atomic --force-with-lease=self-host origin HEAD:self-host "+$UPSTREAM:refs/heads/upstream-base"
+          echo "rebased=true" >> "$GITHUB_OUTPUT"
+
+  Release:
+    needs: Sync
+    # Pushes made with GITHUB_TOKEN do not trigger workflows, so the rebase releases here
+    if: ${{ !cancelled() && needs.Sync.result != 'failure' && (github.event_name == 'push' || needs.Sync.outputs.rebased == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: self-host
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+      - name: Prepare
+        run: |
+          ./.github/prepare-workflow
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          cat > signingrelease.properties <<EOF
+          STORE_FILE=$RUNNER_TEMP/release.jks
+          STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS=habitica
+          KEY_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
+          EOF
+      - name: Build APK
+        uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew :Habitica:assembleProdRelease "-Dorg.gradle.jvmargs=-Xmx4g"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(sed -n 's/^NAME=//p' version.properties)
+          cp Habitica/build/outputs/apk/prod/release/*.apk "habitica-$VERSION.apk"
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest "habitica-$VERSION.apk" --title "Habitica $VERSION ($(git rev-parse --short HEAD))" --notes "Build of $(git rev-parse HEAD)" --target "$(git rev-parse HEAD)"
