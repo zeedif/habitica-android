@@ -47,6 +47,7 @@ fun LoginForm(
     password: String,
     passwordFieldState: LoginFieldState,
     onPasswordChange: (String) -> Unit,
+    oidcName: String?,
     onOidcLoginClicked: () -> Unit,
     onForgotPasswordClicked: () -> Unit,
     isRegistering: Boolean,
@@ -208,7 +209,7 @@ fun LoginForm(
                 }
             }
         }
-        AnimatedVisibility(!isRegistering) {
+        AnimatedVisibility(!isRegistering && oidcName != null) {
             Button(
                 onOidcLoginClicked,
                 colors = ButtonDefaults.buttonColors(
@@ -220,7 +221,7 @@ fun LoginForm(
                 modifier = Modifier.Companion.fillMaxWidth().padding(top = 10.dp)
             ) {
                 Text(
-                    stringResource(R.string.continue_with_sso),
+                    stringResource(R.string.continue_with_sso, oidcName ?: ""),
                     fontWeight = FontWeight.Companion.Bold,
                     fontSize = 18.sp
                 )
