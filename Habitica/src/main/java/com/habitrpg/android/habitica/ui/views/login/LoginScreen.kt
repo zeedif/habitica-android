@@ -49,7 +49,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.core.net.toUri
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -58,6 +57,7 @@ import com.habitrpg.android.habitica.ui.viewmodels.AuthenticationViewModel
 import com.habitrpg.android.habitica.ui.views.LoginFieldState
 import com.habitrpg.common.habitica.extensions.layoutInflater
 import com.habitrpg.common.habitica.helpers.launchCatching
+import kotlinx.coroutines.delay
 
 enum class LoginScreenState {
     INITIAL,
@@ -86,6 +86,11 @@ fun LoginScreen(authenticationViewModel: AuthenticationViewModel, useNewAuthFlow
     var passwordFieldState by remember { mutableStateOf(LoginFieldState.DEFAULT) }
     var email by authenticationViewModel.email
     var emailFieldState by remember { mutableStateOf(LoginFieldState.DEFAULT) }
+    val oidcName by authenticationViewModel.oidcName
+    LaunchedEffect(server) {
+        delay(500) // until the address is typed
+        authenticationViewModel.checkOidc()
+    }
     val context = LocalContext.current
     Box(modifier.fillMaxSize()) {
         AndroidView(
@@ -258,12 +263,11 @@ fun LoginScreen(authenticationViewModel: AuthenticationViewModel, useNewAuthFlow
                             }
                         },
                         showLoading = showLoading,
+                        oidcName = oidcName,
                         onOidcLoginClicked = {
                             coroutineScope.launchCatching {
                                 authenticationViewModel.changeServer()
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, "${server.trimEnd('/')}/api/v4/user/auth/oidc?platform=android".toUri())
-                                )
+                                context.startActivity(Intent(Intent.ACTION_VIEW, authenticationViewModel.oidcLoginUrl()))
                             }
                         },
                         onForgotPasswordClicked = onForgotPasswordClicked
